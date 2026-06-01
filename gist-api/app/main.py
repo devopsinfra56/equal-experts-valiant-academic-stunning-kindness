@@ -1,5 +1,6 @@
 import httpx # Used to test HTTP requests to the GitHub API.
 from fastapi import FastAPI, HTTPException, Query # FastAPI framework for building the API and handling HTTP exceptions.
+import json # Used for parsing JSON responses from the GitHub API.
 
 from app.github import get_user_gists, format_gist # Used to fetch and format gists from GitHub.
 
@@ -34,6 +35,9 @@ async def list_user_gists(
         )
     except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Could not reach the GitHub API.")
+    except json.JSONDecodeError:
+        # Handle cases where GitHub returns a non-JSON error page (e.g. 500 HTML response)
+        raise HTTPException(status_code=502, detail="Invalid response from GitHub API.")
 
     if raw_gists is None:
         raise HTTPException(status_code=404, detail=f"GitHub user '{username}' not found.")

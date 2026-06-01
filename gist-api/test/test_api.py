@@ -9,9 +9,10 @@ Note: get_user_gists is patched at "app.main.get_user_gists" (where it is
 because Python resolves the name at import time.
 """
 
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch, AsyncMock, MagicMock
 from fastapi.testclient import TestClient
-
+import json
+import httpx
 from app.main import app
 
 client = TestClient(app)
@@ -101,6 +102,63 @@ class TestListUserGists:
 
         assert response.json()["gists"][0]["description"] == "No description provided"
 
+    def test_github_500_returns_500(self):
+        #Build a mock response that simulates a 500 error with an HTML body (not JSON)
+        mock_response = AsyncMock()
+        mock_response.status_code = 500
+        mock_response.text = "Internal Server Error"
+
+        with patch("app.main.get_user_gists", new_callable=AsyncMock) as mock_fn:
+            # side_effect make the mock raise the exception when called, simulating a 500 error from GitHub
+            mock_fn.side_effect = httpx.HTTPStatusError(
+                message="500 Server Error",
+                request=AsyncMock(), # httpx requires a request object, but we using a simple mock test
+                response=mock_response,
+            )
+            response = client.get("/octocat")
+        
+        assert response.status_code == 500
+
+        assert "GitHub API error" in response.json()["detail"]
+    
+    def test_github_403_rate_limit_returns_403(self):
+        # Build a mock response that simulates a 403 error with a JSON body (GitHub's typical rate limit response)
+        mock_response = AsyncMock()
+        mock_response.status_code = 403
+        mock_response.text = "API rate limit exceeded"
+
+        with patch("app.main.get_user_gists", new_callable=AsyncMock) as mock_fn:
+            mock_fn.side_effect = httpx.HTTPStatusError(
+                message="403 Forbidden",
+                request=AsyncMock(),
+                response=mock_response,
+            )
+            response = client.get("/octocat")
+        
+        assert response.status_code == 403
+        assert "GitHub API error" in response.json()["detail"]
+    
+    def test_github_unreachable_returns_503(self):
+        # Simulate a network error when trying to reach GitHub
+        with patch("app.main.get_user_gists", new_callable=AsyncMock) as mock_fn:
+            mock_fn.side_effect = httpx.RequestError("Connection timed out")
+            response = client.get("/octocat")
+
+        assert response.status_code == 503
+        assert "Could not reach the GitHub API" in response.json()["detail"]
+    
+    def test_github_returns_non_json_error_returns_502(self):
+        # Simulate GitHub returning a 500 error with an HTML body (not JSON)
+        with patch("app.main.get_user_gists", new_callable=AsyncMock) as mock_fn:
+            mock_fn.side_effect = json.JSONDecodeError(
+                msg="Expecting value",
+                doc="<html>Bad Gateway</html>", # Github returning an HTML error page instead of JSON
+                pos=0
+            )
+            response = client.get("/octocat")
+
+        assert response.status_code == 502
+        assert "Invalid response from GitHub API." in response.json()["detail"]
 
 class TestHealthCheck:
 
