@@ -77,4 +77,4 @@ pytest test/ -v
 - **FastAPI** handles routing and automatic query parameter validation
 - **httpx** makes async requests to the GitHub API
 - **In-memory cache** with a 60-second TTL keeps the app within GitHub's unauthenticated rate limit of 60 requests per hour
-- Gist responses are trimmed to a consistent set of fields rather than forwarding GitHub's raw response
+- Gist responses are trimmed to a consistent set of fields rather than forwarding GitHub's raw response# test

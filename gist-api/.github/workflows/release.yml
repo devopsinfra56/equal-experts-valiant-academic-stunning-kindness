@@ -1,0 +1,230 @@
+# =============================================================================
+# PR Checks — runs on every pull request targeting main
+# =============================================================================
+# A pull request CANNOT be merged until ALL of these pass:
+#   1. Tests pass
+#   2. SonarCloud scan passes (code quality + security)
+#   3. Docker image builds successfully
+#   4. Trivy finds NO critical or high vulnerabilities
+#   5. At least 1 reviewer has approved (set in branch protection rules)
+#
+# If Trivy finds vulnerabilities they are posted as a PR comment so the
+# engineer can see exactly what needs fixing without leaving GitHub.
+# =============================================================================
+
+name: PR Checks
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+
+
+jobs:
+
+  # ---------------------------------------------------------------------------
+  # JOB 1 — Run Tests
+  # Runs first. If tests fail there is no point running anything else.
+  # ---------------------------------------------------------------------------
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Run tests with coverage so SonarCloud can show which lines are tested.
+      # --cov=app        tells pytest-cov to measure coverage of the app/ folder
+      # --cov-report=xml generates coverage.xml which SonarCloud reads
+      - name: Run tests with coverage
+        run: pytest test/ -v --cov=app --cov-report=xml:coverage.xml
+
+
+  # ---------------------------------------------------------------------------
+  # JOB 2 — SonarCloud Scan
+  # Analyses source code for security vulnerabilities and code quality issues.
+  # Runs after tests so coverage data is available for the report.
+  # ---------------------------------------------------------------------------
+  sonarcloud-scan:
+    name: SonarCloud Scan
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # SonarCloud needs full git history to calculate new vs existing code
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Re-run tests to regenerate coverage.xml in this job's workspace.
+      # Each job runs on a fresh VM so we need to regenerate the file here.
+      - name: Run tests with coverage
+        run: pytest test/ -v --cov=app --cov-report=xml:coverage.xml
+
+      # SonarCloud reads sonar-project.properties from the root of the repo.
+      # It posts a quality gate result directly onto the PR.
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@59db25f34e16620e48ab4bb9e4a5dce155cb5432
+        env:
+          # GITHUB_TOKEN lets SonarCloud post PR status checks
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # SONAR_TOKEN authenticates with your SonarCloud account
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+
+  # ---------------------------------------------------------------------------
+  # JOB 3 — Build Docker Image and Trivy Security Scan
+  #
+  # Builds the Docker image then scans it for vulnerabilities.
+  #
+  # If CRITICAL or HIGH vulnerabilities are found:
+  #   - A table listing every CVE is posted as a PR comment
+  #   - This job fails, blocking the merge
+  #
+  # If clean:
+  #   - A passing comment is posted on the PR
+  #   - Job passes
+  # ---------------------------------------------------------------------------
+  build-and-trivy-scan:
+    name: Build and Trivy Scan
+    runs-on: ubuntu-latest
+    needs: test
+
+    permissions:
+      contents: read
+      pull-requests: write    # needed to post PR comments
+      security-events: write  # needed to upload SARIF to Security tab
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Build from the root Dockerfile.
+      # Tag includes the PR number for easy identification in logs.
+      - name: Build Docker image
+        run: docker build -t gist-api:pr-${{ github.event.pull_request.number }} .
+
+      # Run Trivy and save results as JSON.
+      # exit-code: 0 here so we can collect results before deciding to fail.
+      - name: Run Trivy scan (JSON)
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
+        with:
+          scan-type: image
+          image-ref: gist-api:pr-${{ github.event.pull_request.number }}
+          format: json
+          output: trivy-results.json
+          severity: CRITICAL,HIGH
+          exit-code: 0
+
+      # Upload SARIF to GitHub Security tab so vulnerabilities are tracked there too.
+      - name: Run Trivy scan (SARIF)
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
+        with:
+          scan-type: image
+          image-ref: gist-api:pr-${{ github.event.pull_request.number }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: 0
+
+      - name: Upload results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+
+      # Parse the JSON and post a formatted comment on the PR.
+      # If vulnerabilities are found, the comment lists every one with:
+      #   CVE ID, package, installed version, fixed version, severity
+      - name: Post Trivy results as PR comment
+        uses: actions/github-script@v7
+        id: trivy-comment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const raw = fs.readFileSync('trivy-results.json', 'utf8');
+            const results = JSON.parse(raw);
+
+            // Collect all vulnerabilities across all image layers
+            const vulns = [];
+            for (const result of (results.Results || [])) {
+              for (const v of (result.Vulnerabilities || [])) {
+                vulns.push({
+                  id:        v.VulnerabilityID,
+                  pkg:       v.PkgName,
+                  installed: v.InstalledVersion,
+                  fixed:     v.FixedVersion || 'No fix available',
+                  severity:  v.Severity,
+                  title:     v.Title || 'No title',
+                });
+              }
+            }
+
+            let body;
+
+            if (vulns.length === 0) {
+              body = [
+                '## ✅ Trivy Security Scan — No Vulnerabilities Found',
+                '',
+                'The Docker image was scanned for CRITICAL and HIGH vulnerabilities.',
+                'No issues were found. This check has passed.',
+              ].join('\n');
+            } else {
+              const rows = vulns.map(v =>
+                `| \`${v.id}\` | ${v.pkg} | ${v.installed} | ${v.fixed} | **${v.severity}** | ${v.title} |`
+              ).join('\n');
+
+              body = [
+                '## ❌ Trivy Security Scan — Vulnerabilities Found',
+                '',
+                `**${vulns.length} CRITICAL/HIGH vulnerabilit${vulns.length === 1 ? 'y' : 'ies'} found.**`,
+                'This PR cannot be merged until all issues below are resolved.',
+                '',
+                '| CVE ID | Package | Installed | Fixed In | Severity | Description |',
+                '|--------|---------|-----------|----------|----------|-------------|',
+                rows,
+                '',
+                '### How to fix',
+                '1. Update the affected packages in `requirements.txt` to the fixed versions above',
+                '2. Push a new commit to this PR — the scan will re-run automatically',
+                '3. If no fix is available, raise it with the team before proceeding',
+              ].join('\n');
+            }
+
+            await github.rest.issues.createComment({
+              owner:        context.repo.owner,
+              repo:         context.repo.repo,
+              issue_number: context.issue.number,
+              body:         body,
+            });
+
+            core.setOutput('has_vulns', vulns.length > 0 ? 'true' : 'false');
+            console.log(`Vulnerabilities found: ${vulns.length}`);
+
+      # Fail the job if vulnerabilities were found.
+      # This is what actually blocks the merge via branch protection rules.
+      - name: Fail if vulnerabilities found
+        if: steps.trivy-comment.outputs.has_vulns == 'true'
+        run: |
+          echo "Vulnerabilities found — merge is blocked."
+          echo "See the PR comment for the full list."
+          exit 1
