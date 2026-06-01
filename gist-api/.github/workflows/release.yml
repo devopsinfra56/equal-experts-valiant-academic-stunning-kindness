@@ -83,7 +83,7 @@ jobs:
       # SonarCloud reads sonar-project.properties from the root of the repo.
       # It posts a quality gate result directly onto the PR.
       - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@master
+        uses: SonarSource/sonarcloud-github-action@59db25f34e16620e48ab4bb9e4a5dce155cb5432
         env:
           # GITHUB_TOKEN lets SonarCloud post PR status checks
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -126,7 +126,7 @@ jobs:
       # Run Trivy and save results as JSON.
       # exit-code: 0 here so we can collect results before deciding to fail.
       - name: Run Trivy scan (JSON)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
           scan-type: image
           image-ref: gist-api:pr-${{ github.event.pull_request.number }}
@@ -137,7 +137,7 @@ jobs:
 
       # Upload SARIF to GitHub Security tab so vulnerabilities are tracked there too.
       - name: Run Trivy scan (SARIF)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
           scan-type: image
           image-ref: gist-api:pr-${{ github.event.pull_request.number }}
