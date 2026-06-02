@@ -128,7 +128,7 @@ jobs:
             ./gist-api
 
       - name: Run Trivy scan (JSON)
-        uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
           scan-type: image
           image-ref: gist-api:pr-${{ github.event.pull_request.number }}
@@ -141,7 +141,7 @@ jobs:
       # This means engineers can see findings without leaving the Actions tab.
       # exit-code: 0 so the pipeline continues to the PR comment step below.
       - name: Print Trivy results to workflow log
-        uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
           scan-type: image
           image-ref: gist-api:pr-${{ github.event.pull_request.number }}
@@ -150,7 +150,7 @@ jobs:
           exit-code: 0
 
       - name: Run Trivy scan (SARIF)
-        uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
           scan-type: image
           image-ref: gist-api:pr-${{ github.event.pull_request.number }}
