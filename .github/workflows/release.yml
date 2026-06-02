@@ -1,0 +1,81 @@
+# =============================================================================
+# Release — runs when a PR is merged into main
+# =============================================================================
+# This workflow triggers automatically the moment a PR is merged into main.
+# It builds the final Docker image, tags it with a datetime stamp, and
+# pushes it to DockerHub so ArgoCD can detect the new image and deploy it.
+#
+# Flow after merge:
+#   PR merged → release.yml runs → image pushed to DockerHub
+#   → ArgoCD detects new :latest tag → syncs dev + staging automatically
+#   → production waits for manual approval in ArgoCD UI
+#
+# REQUIRED SECRETS (GitHub → Settings → Secrets → Actions):
+#   DOCKERHUB_USERNAME — your DockerHub username (devopsinfra56)
+#   DOCKERHUB_TOKEN    — DockerHub access token
+# =============================================================================
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+    # This triggers on any push to main.
+    # In practice this means a merged PR since branch protection
+    # blocks direct pushes to main.
+
+
+jobs:
+
+  build-and-push:
+    name: Build and Push to DockerHub
+    runs-on: ubuntu-latest
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Generate UTC datetime tag: YYYYMMDD-HHMM
+      # e.g. 26 May 2026 at 09:30 → "20260526-0930"
+      # This tells ArgoCD (and your team) exactly when this image was built.
+      - name: Generate datetime tag
+        run: echo "IMAGE_TAG=$(date -u +'%Y%m%d-%H%M')" >> $GITHUB_ENV
+
+      # Dockerfile lives inside gist-api/ — build context is ./gist-api
+      # Build once, tag twice — no need to rebuild for the second tag
+      - name: Build Docker image
+        run: |
+          docker build \
+            --tag $DOCKERHUB_USERNAME/gist-api:latest \
+            --tag $DOCKERHUB_USERNAME/gist-api:${{ env.IMAGE_TAG }} \
+            ./gist-api
+
+      # Push both tags to DockerHub.
+      # ArgoCD watches for changes to :latest and triggers a sync
+      # automatically for dev and staging namespaces.
+      # Production requires a manual sync in the ArgoCD UI.
+      - name: Push to DockerHub
+        run: |
+          docker push $DOCKERHUB_USERNAME/gist-api:latest
+          docker push $DOCKERHUB_USERNAME/gist-api:${{ env.IMAGE_TAG }}
+
+      - name: Print release summary
+        run: |
+          echo "========================================"
+          echo "Release complete"
+          echo "Image: $DOCKERHUB_USERNAME/gist-api"
+          echo "Tags pushed:"
+          echo "  :latest"
+          echo "  :${{ env.IMAGE_TAG }}"
+          echo ""
+          echo "ArgoCD will now sync dev and staging automatically."
+          echo "Production requires manual approval in the ArgoCD UI."
+          echo "========================================"

@@ -13,7 +13,7 @@ updates:
       prefix: "ci"
 
   - package-ecosystem: "docker"
-    directory: "/"
+    directory: "/gist-api"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -24,7 +24,7 @@ updates:
       prefix: "docker"
 
   - package-ecosystem: "pip"
-    directory: "/"
+    directory: "/gist-api"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -32,4 +32,4 @@ updates:
       timezone: "Africa/Johannesburg"
     open-pull-requests-limit: 5
     commit-message:
-      prefix: "pip"
+      prefix: "deps"

@@ -8,16 +8,15 @@
 #   4. Trivy finds NO critical or high vulnerabilities
 #   5. At least 1 reviewer has approved (set in branch protection rules)
 #
-# If Trivy finds vulnerabilities they are posted as a PR comment so the
-# engineer can see exactly what needs fixing without leaving GitHub.
+# NOTE: All application code lives inside the gist-api/ subfolder.
+# Every step that touches code, tests, or Docker must reference that path.
 # =============================================================================
 
 name: PR Checks
 
 on:
   pull_request:
-    branches:
-      - main
+    branches: [main]
     types: [opened, synchronize, reopened]
 
 
@@ -33,27 +32,31 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
+      # requirements.txt lives inside gist-api/
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          cd gist-api
+          pip install -r requirements.txt
 
-      # Run tests with coverage so SonarCloud can show which lines are tested.
-      # --cov=app        tells pytest-cov to measure coverage of the app/ folder
-      # --cov-report=xml generates coverage.xml which SonarCloud reads
+      # tests live in gist-api/test/
+      # coverage.xml is generated here and read by SonarCloud in the next job
       - name: Run tests with coverage
-        run: pytest test/ -v --cov=app --cov-report=xml:coverage.xml
+        run: |
+          cd gist-api
+          pytest test/ -v --cov=app --cov-report=xml:coverage.xml
 
 
   # ---------------------------------------------------------------------------
   # JOB 2 — SonarCloud Scan
   # Analyses source code for security vulnerabilities and code quality issues.
-  # Runs after tests so coverage data is available for the report.
+  # Needs test to pass first so coverage data exists.
   # ---------------------------------------------------------------------------
   sonarcloud-scan:
     name: SonarCloud Scan
@@ -62,9 +65,8 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          # SonarCloud needs full git history to calculate new vs existing code
           fetch-depth: 0
 
       - name: Set up Python 3.12
@@ -73,36 +75,36 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          cd gist-api
+          pip install -r requirements.txt
 
-      # Re-run tests to regenerate coverage.xml in this job's workspace.
-      # Each job runs on a fresh VM so we need to regenerate the file here.
+      # Regenerate coverage.xml in this job's workspace.
+      # Each job runs on a fresh VM so files from the test job don't carry over.
       - name: Run tests with coverage
-        run: pytest test/ -v --cov=app --cov-report=xml:coverage.xml
+        run: |
+          cd gist-api
+          pytest test/ -v --cov=app --cov-report=xml:coverage.xml
 
-      # SonarCloud reads sonar-project.properties from the root of the repo.
-      # It posts a quality gate result directly onto the PR.
+      # sonarcloud-github-action was deprecated Oct 2025.
+      # Replacement: sonarqube-scan-action — handles both SonarQube Server and Cloud.
+      # SONAR_HOST_URL targets SonarCloud specifically.
       - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@59db25f34e16620e48ab4bb9e4a5dce155cb5432
+        uses: SonarSource/sonarqube-scan-action@59db25f34e16620e48ab4bb9e4a5dce155cb5432
+        with:
+          projectBaseDir: gist-api
+          args: >
+            -Dsonar.qualitygate.wait=false
         env:
-          # GITHUB_TOKEN lets SonarCloud post PR status checks
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # SONAR_TOKEN authenticates with your SonarCloud account
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
+          SONAR_HOST_URL: https://sonarcloud.io
 
   # ---------------------------------------------------------------------------
   # JOB 3 — Build Docker Image and Trivy Security Scan
   #
   # Builds the Docker image then scans it for vulnerabilities.
-  #
-  # If CRITICAL or HIGH vulnerabilities are found:
-  #   - A table listing every CVE is posted as a PR comment
-  #   - This job fails, blocking the merge
-  #
-  # If clean:
-  #   - A passing comment is posted on the PR
-  #   - Job passes
+  # Posts results directly as a PR comment — vulnerabilities block the merge.
   # ---------------------------------------------------------------------------
   build-and-trivy-scan:
     name: Build and Trivy Scan
@@ -111,20 +113,20 @@ jobs:
 
     permissions:
       contents: read
-      pull-requests: write    # needed to post PR comments
-      security-events: write  # needed to upload SARIF to Security tab
+      pull-requests: write
+      security-events: write
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
-      # Build from the root Dockerfile.
-      # Tag includes the PR number for easy identification in logs.
+      # Dockerfile lives inside gist-api/ — build context is ./gist-api
       - name: Build Docker image
-        run: docker build -t gist-api:pr-${{ github.event.pull_request.number }} .
+        run: |
+          docker build \
+            -t gist-api:pr-${{ github.event.pull_request.number }} \
+            ./gist-api
 
-      # Run Trivy and save results as JSON.
-      # exit-code: 0 here so we can collect results before deciding to fail.
       - name: Run Trivy scan (JSON)
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
@@ -135,7 +137,18 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: 0
 
-      # Upload SARIF to GitHub Security tab so vulnerabilities are tracked there too.
+      # Print vulnerabilities directly in the workflow log as a table.
+      # This means engineers can see findings without leaving the Actions tab.
+      # exit-code: 0 so the pipeline continues to the PR comment step below.
+      - name: Print Trivy results to workflow log
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
+        with:
+          scan-type: image
+          image-ref: gist-api:pr-${{ github.event.pull_request.number }}
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: 0
+
       - name: Run Trivy scan (SARIF)
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
@@ -147,13 +160,10 @@ jobs:
           exit-code: 0
 
       - name: Upload results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@87557b9c84dde89fdd9b10e88954ac2f4248e463
         with:
           sarif_file: trivy-results.sarif
 
-      # Parse the JSON and post a formatted comment on the PR.
-      # If vulnerabilities are found, the comment lists every one with:
-      #   CVE ID, package, installed version, fixed version, severity
       - name: Post Trivy results as PR comment
         uses: actions/github-script@v7
         id: trivy-comment
@@ -164,7 +174,6 @@ jobs:
             const raw = fs.readFileSync('trivy-results.json', 'utf8');
             const results = JSON.parse(raw);
 
-            // Collect all vulnerabilities across all image layers
             const vulns = [];
             for (const result of (results.Results || [])) {
               for (const v of (result.Vulnerabilities || [])) {
@@ -204,7 +213,7 @@ jobs:
                 rows,
                 '',
                 '### How to fix',
-                '1. Update the affected packages in `requirements.txt` to the fixed versions above',
+                '1. Update the affected packages in `gist-api/requirements.txt` to the fixed versions above',
                 '2. Push a new commit to this PR — the scan will re-run automatically',
                 '3. If no fix is available, raise it with the team before proceeding',
               ].join('\n');
@@ -218,13 +227,17 @@ jobs:
             });
 
             core.setOutput('has_vulns', vulns.length > 0 ? 'true' : 'false');
-            console.log(`Vulnerabilities found: ${vulns.length}`);
 
-      # Fail the job if vulnerabilities were found.
-      # This is what actually blocks the merge via branch protection rules.
       - name: Fail if vulnerabilities found
         if: steps.trivy-comment.outputs.has_vulns == 'true'
         run: |
-          echo "Vulnerabilities found — merge is blocked."
-          echo "See the PR comment for the full list."
+          echo "============================================"
+          echo "TRIVY: Vulnerabilities found — merge blocked"
+          echo "============================================"
+          echo ""
+          echo "Full table printed above in the"
+          echo "'Print Trivy results to workflow log' step."
+          echo ""
+          echo "Full list also posted as a comment on this PR."
+          echo "Fix the issues and push a new commit to re-run the scan."
           exit 1
