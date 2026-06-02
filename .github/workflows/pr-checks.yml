@@ -32,7 +32,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -65,7 +65,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
 
@@ -86,15 +86,17 @@ jobs:
           cd gist-api
           pytest test/ -v --cov=app --cov-report=xml:coverage.xml
 
-      # sonar-project.properties lives inside gist-api/
-      # projectBaseDir tells the action where to find it
+      # sonarcloud-github-action was deprecated Oct 2025.
+      # Replacement: sonarqube-scan-action — handles both SonarQube Server and Cloud.
+      # SONAR_HOST_URL targets SonarCloud specifically.
       - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@49e6cd3b187936a73b8280d59ffd9da69df63a9e
+        uses: SonarSource/sonarqube-scan-action@59db25f34e16620e48ab4bb9e4a5dce155cb5432
         with:
           projectBaseDir: gist-api
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
 
 
   # ---------------------------------------------------------------------------
@@ -115,7 +117,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       # Dockerfile lives inside gist-api/ — build context is ./gist-api
       - name: Build Docker image
@@ -131,6 +133,18 @@ jobs:
           image-ref: gist-api:pr-${{ github.event.pull_request.number }}
           format: json
           output: trivy-results.json
+          severity: CRITICAL,HIGH
+          exit-code: 0
+
+      # Print vulnerabilities directly in the workflow log as a table.
+      # This means engineers can see findings without leaving the Actions tab.
+      # exit-code: 0 so the pipeline continues to the PR comment step below.
+      - name: Print Trivy results to workflow log
+        uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8
+        with:
+          scan-type: image
+          image-ref: gist-api:pr-${{ github.event.pull_request.number }}
+          format: table
           severity: CRITICAL,HIGH
           exit-code: 0
 
@@ -216,6 +230,13 @@ jobs:
       - name: Fail if vulnerabilities found
         if: steps.trivy-comment.outputs.has_vulns == 'true'
         run: |
-          echo "Vulnerabilities found — merge is blocked."
-          echo "See the PR comment for the full list."
+          echo "============================================"
+          echo "TRIVY: Vulnerabilities found — merge blocked"
+          echo "============================================"
+          echo ""
+          echo "Full table printed above in the"
+          echo "'Print Trivy results to workflow log' step."
+          echo ""
+          echo "Full list also posted as a comment on this PR."
+          echo "Fix the issues and push a new commit to re-run the scan."
           exit 1
