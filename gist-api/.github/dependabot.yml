@@ -5,16 +5,31 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Africa/Johannesburg"
     open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
 
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Africa/Johannesburg"
     open-pull-requests-limit: 5
+    commit-message:
+      prefix: "docker"
 
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Africa/Johannesburg"
     open-pull-requests-limit: 5
+    commit-message:
+      prefix: "pip"
