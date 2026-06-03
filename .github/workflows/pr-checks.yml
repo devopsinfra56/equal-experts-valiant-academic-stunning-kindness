@@ -45,18 +45,25 @@ jobs:
           cd gist-api
           pip install -r requirements.txt
 
-      # tests live in gist-api/test/
-      # coverage.xml is generated here and read by SonarCloud in the next job
       - name: Run tests with coverage
         run: |
           cd gist-api
           pytest test/ -v --cov=app --cov-report=xml:coverage.xml
 
+      # Upload coverage.xml so the SonarCloud job can consume it directly.
+      # Avoids running pytest a second time — build once, reuse artifacts.
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: gist-api/coverage.xml
+          retention-days: 1
+
 
   # ---------------------------------------------------------------------------
   # JOB 2 — SonarCloud Scan
   # Analyses source code for security vulnerabilities and code quality issues.
-  # Needs test to pass first so coverage data exists.
+  # Needs test to pass first so coverage.xml artifact exists.
   # ---------------------------------------------------------------------------
   sonarcloud-scan:
     name: SonarCloud Scan
@@ -69,36 +76,26 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      # Download coverage.xml produced by the test job.
+      # path: gist-api places it at gist-api/coverage.xml — where SonarCloud expects it.
+      - name: Download coverage report
+        uses: actions/download-artifact@v4
         with:
-          python-version: "3.12"
+          name: coverage-report
+          path: gist-api
 
-      - name: Install dependencies
-        run: |
-          cd gist-api
-          pip install -r requirements.txt
-
-      # Regenerate coverage.xml in this job's workspace.
-      # Each job runs on a fresh VM so files from the test job don't carry over.
-      - name: Run tests with coverage
-        run: |
-          cd gist-api
-          pytest test/ -v --cov=app --cov-report=xml:coverage.xml
-
-      # sonarcloud-github-action was deprecated Oct 2025.
-      # Replacement: sonarqube-scan-action — handles both SonarQube Server and Cloud.
-      # SONAR_HOST_URL targets SonarCloud specifically.
+      # sonarqube-scan-action hits a CDN 403 downloading the binary at runtime.
+      # sonarcloud-github-action was archived Oct 2025.
+      # Running the scanner via its Docker image avoids both issues — the binary
+      # is bundled in the image and pinned by SHA for supply-chain safety.
+      # Image: sonarsource/sonar-scanner-cli:12.1.0.3225_8.0.1
       - name: SonarCloud Scan
-        uses: SonarSource/sonarqube-scan-action@59db25f34e16620e48ab4bb9e4a5dce155cb5432
-        with:
-          projectBaseDir: gist-api
-          args: >
-            -Dsonar.qualitygate.wait=false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: https://sonarcloud.io
+        run: |
+          docker run --rm \
+            -e SONAR_TOKEN=${{ secrets.SONAR_TOKEN }} \
+            -e SONAR_HOST_URL=https://sonarcloud.io \
+            -v ${{ github.workspace }}/gist-api:/usr/src \
+            sonarsource/sonar-scanner-cli@sha256:a429d20d22c8d97b9a10ea5585f1c56d2a54796f0ae3da06c7a1a49eec78e6c2
 
   # ---------------------------------------------------------------------------
   # JOB 3 — Build Docker Image and Trivy Security Scan

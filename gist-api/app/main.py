@@ -17,8 +17,8 @@ Instrumentator().instrument(app).expose(app)  # Set up Prometheus metrics for mo
 # /health must be declared before /{username} so FastAPI matches it
 # before the wildcard route.
 @app.get("/health")
-async def health_check():
-    return {"status": "ok"}
+async def health_check(): # Simple health check endpoint to verify the API is running.
+    return {"status": "ok"} # Returns a simple JSON response indicating the API is healthy.
 
 
 @app.get("/{username}")

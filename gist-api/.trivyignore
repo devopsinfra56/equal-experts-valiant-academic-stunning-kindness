@@ -1,0 +1,27 @@
+# =============================================================================
+# Trivy CVE Exceptions
+# =============================================================================
+# CVEs listed here are acknowledged but cannot be fixed at this time.
+# Every entry must include:
+#   - The CVE ID
+#   - The reason it cannot be fixed
+#   - The date it was reviewed
+#   - The engineer who reviewed it
+#
+# This file must be reviewed monthly. When a fix becomes available the
+# CVE must be removed from this file and the package updated immediately.
+# =============================================================================
+
+# CVE-2025-69720 — ncurses buffer overflow
+# Package: libncursesw6, libtinfo6, ncurses-base, ncurses-bin
+# Reason: No fix available in Alpine 3.23 as of 2026-06-02
+# Action: Monitor upstream. Update base image when fix is released.
+# Reviewed by: Isaiah Adams — 2026-06-02
+# CVE-2025-69720
+
+# CVE-2026-42496 — Archive::Tar symlink vulnerability
+# Package: perl-base
+# Reason: No fix available. perl-base is an Alpine base dependency.
+# Action: Monitor upstream. Switch base image if fix not available by 2026-09-01
+# Reviewed by: Isaiah Adams — 2026-06-02
+# CVE-2026-42496

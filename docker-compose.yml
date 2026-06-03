@@ -1,0 +1,12 @@
+services:
+  gist-api:
+    build:
+      context: ./gist-api
+    ports:
+      - "8080:8080"
+    # Mount only the app source so code changes are reflected immediately
+    # without rebuilding. Requirements stay installed from the image layer.
+    volumes:
+      - ./gist-api/app:/app/app
+    # --reload watches for file changes and restarts uvicorn automatically.
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
