@@ -1,7 +1,6 @@
 import httpx # Used to test HTTP requests to the GitHub API.
 from fastapi import FastAPI, HTTPException, Query # FastAPI framework for building the API and handling HTTP exceptions.
 import json # Used for parsing JSON responses from the GitHub API.
-
 from app.github import get_user_gists, format_gist # Used to fetch and format gists from GitHub.
 
 
@@ -15,8 +14,8 @@ app = FastAPI(
 # /health must be declared before /{username} so FastAPI matches it
 # before the wildcard route.
 @app.get("/health")
-async def health_check():
-    return {"status": "ok"}
+async def health_check(): # Simple health check endpoint to verify the API is running.
+    return {"status": "ok"} # Returns a simple JSON response indicating the API is healthy.
 
 
 @app.get("/{username}")

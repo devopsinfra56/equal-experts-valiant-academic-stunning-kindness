@@ -10,11 +10,11 @@ import httpx # Used for making asynchronous HTTP requests to the GitHub API.
 from typing import Optional # Used for type hinting the return value of get_user_gists (list of gists or None if user not found).
 
 # Constants and simple in-memory cache for GitHub API responses.
-GITHUB_API_BASE = "https://api.github.com"
+GITHUB_API_BASE = "https://api.github.com" # Base URL for GitHub API requests.
 GITHUB_HEADERS = {
     "Accept": "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
-}
+} # GitHub API versioning header to ensure consistent responses.
 
 # Simple in-memory TTL (Time-To-Live) cache to stay within GitHub's 60 req/hour
 # unauthenticated rate limit on repeated calls for the same user.

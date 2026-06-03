@@ -84,19 +84,18 @@ jobs:
           name: coverage-report
           path: gist-api
 
-      # sonarcloud-github-action was deprecated Oct 2025.
-      # Replacement: sonarqube-scan-action — handles both SonarQube Server and Cloud.
-      # SONAR_HOST_URL targets SonarCloud specifically.
+      # sonarqube-scan-action hits a CDN 403 downloading the binary at runtime.
+      # sonarcloud-github-action was archived Oct 2025.
+      # Running the scanner via its Docker image avoids both issues — the binary
+      # is bundled in the image and pinned by SHA for supply-chain safety.
+      # Image: sonarsource/sonar-scanner-cli:12.1.0.3225_8.0.1
       - name: SonarCloud Scan
-        uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995
-        with:
-          projectBaseDir: gist-api
-          args: >
-            -Dsonar.qualitygate.wait=false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: https://sonarcloud.io
+        run: |
+          docker run --rm \
+            -e SONAR_TOKEN=${{ secrets.SONAR_TOKEN }} \
+            -e SONAR_HOST_URL=https://sonarcloud.io \
+            -v ${{ github.workspace }}/gist-api:/usr/src \
+            sonarsource/sonar-scanner-cli@sha256:a429d20d22c8d97b9a10ea5585f1c56d2a54796f0ae3da06c7a1a49eec78e6c2
 
   # ---------------------------------------------------------------------------
   # JOB 3 — Build Docker Image and Trivy Security Scan
