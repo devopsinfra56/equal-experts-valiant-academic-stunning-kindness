@@ -90,6 +90,7 @@ jobs:
           token: ${{ secrets.GITOPS_PAT }}
 
       # Update the tag field in all environment values files.
+      # The tag field is used in helm/gist-api/templates/deployment.yaml to set the image tag.
       - name: Update image tag in all environments
         run: |
           for VALUES_FILE in \
