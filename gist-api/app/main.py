@@ -1,6 +1,7 @@
 import httpx # Used to test HTTP requests to the GitHub API.
 from fastapi import FastAPI, HTTPException, Query # FastAPI framework for building the API and handling HTTP exceptions.
 import json # Used for parsing JSON responses from the GitHub API.
+from prometheus_fastapi_instrumentator import Instrumentator # Used to expose Prometheus metrics for monitoring the API.    
 from app.github import get_user_gists, format_gist # Used to fetch and format gists from GitHub.
 
 
@@ -10,6 +11,8 @@ app = FastAPI(
     title="GitHub Gists API",
     description="Returns a GitHub user's public gists. Usage: GET /{username}",
 )
+
+Instrumentator().instrument(app).expose(app)  # Set up Prometheus metrics for monitoring the API.
 
 # /health must be declared before /{username} so FastAPI matches it
 # before the wildcard route.
