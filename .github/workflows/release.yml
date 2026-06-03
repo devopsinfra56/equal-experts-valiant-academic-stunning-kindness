@@ -3,10 +3,9 @@
 # =============================================================================
 # Flow after merge:
 #   PR merged → build-and-push → image pushed to DockerHub with datetime tag
-#   → open-gitops-pr → checks out gist-api-gitops, updates helm/gist-api/values-dev.yaml
-#     with the new image tag, and opens a PR
-#   → PR merged on gitops → ArgoCD syncs the dev environment automatically
-#   → staging and production promoted manually via workflow_dispatch on gitops
+#   → deploy-dev-staging → PR opened on gist-api-gitops for dev + staging
+#   → approve-production → manual approval required in the GitHub Actions UI
+#   → deploy-production → PR opened on gist-api-gitops for production only
 #
 # REQUIRED SECRETS (GitHub → Settings → Secrets → Actions):
 #   DOCKERHUB_USERNAME — DockerHub username (devopsinfra56)
@@ -14,6 +13,11 @@
 #   GITOPS_PAT         — GitHub PAT with repo and pull-request write access
 #                        to gist-api-gitops. GITHUB_TOKEN cannot act on a
 #                        different repository.
+#
+# REQUIRED ENVIRONMENT (GitHub → Settings → Environments):
+#   production — add required reviewers here. The approve-production job
+#                pauses and shows an approval button in the Actions UI until
+#                a reviewer approves or rejects.
 # =============================================================================
 
 name: Release
@@ -31,7 +35,6 @@ jobs:
     env:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
 
-    # Expose IMAGE_TAG so the open-gitops-pr job can consume it.
     outputs:
       image_tag: ${{ steps.tag.outputs.image_tag }}
 
@@ -45,9 +48,6 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Generate UTC datetime tag: YYYYMMDD-HHMM
-      # Written to $GITHUB_ENV (for steps in this job)
-      # and $GITHUB_OUTPUT (so open-gitops-pr can consume it via job outputs).
       - name: Generate datetime tag
         id: tag
         run: |
@@ -73,8 +73,8 @@ jobs:
           echo "Tags pushed: :latest, :${{ env.IMAGE_TAG }}"
 
 
-  open-gitops-pr:
-    name: Open GitOps PR
+  deploy-dev-staging:
+    name: Deploy to Dev and Staging
     runs-on: ubuntu-latest
     needs: build-and-push
 
@@ -89,14 +89,11 @@ jobs:
           repository: ${{ env.GITOPS_REPO }}
           token: ${{ secrets.GITOPS_PAT }}
 
-      # Update the tag field in all environment values files.
-      # The tag field is used in helm/gist-api/templates/deployment.yaml to set the image tag.
-      - name: Update image tag in all environments
+      - name: Update image tag for dev and staging
         run: |
           for VALUES_FILE in \
             helm/gist-api/values-dev.yaml \
-            helm/gist-api/values-staging.yaml \
-            helm/gist-api/values-production.yaml; do
+            helm/gist-api/values-staging.yaml; do
             sed -i 's|tag: ".*"|tag: "${{ env.IMAGE_TAG }}"|' $VALUES_FILE
           done
 
@@ -104,13 +101,12 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -b deploy/all-${{ env.IMAGE_TAG }}
+          git checkout -b deploy/dev-staging-${{ env.IMAGE_TAG }}
           git add \
             helm/gist-api/values-dev.yaml \
-            helm/gist-api/values-staging.yaml \
-            helm/gist-api/values-production.yaml
-          git commit -m "deploy(all): update gist-api image to ${{ env.IMAGE_TAG }}"
-          git push origin deploy/all-${{ env.IMAGE_TAG }}
+            helm/gist-api/values-staging.yaml
+          git commit -m "deploy(dev+staging): update gist-api image to ${{ env.IMAGE_TAG }}"
+          git push origin deploy/dev-staging-${{ env.IMAGE_TAG }}
 
       - name: Open pull request
         env:
@@ -119,21 +115,91 @@ jobs:
           gh pr create \
             --repo $GITOPS_REPO \
             --base main \
-            --head deploy/all-${{ env.IMAGE_TAG }} \
-            --title "deploy(all): update gist-api image to ${{ env.IMAGE_TAG }}" \
+            --head deploy/dev-staging-${{ env.IMAGE_TAG }} \
+            --title "deploy(dev+staging): update gist-api image to ${{ env.IMAGE_TAG }}" \
             --body "$(cat <<'EOF'
-          ## Image Update
+          ## Image Update — Dev and Staging
 
           | Field | Value |
           |---|---|
-          | **Environments** | \`dev\`, \`staging\`, \`production\` |
+          | **Environments** | \`dev\`, \`staging\` |
           | **Image** | \`devopsinfra56/gist-api:${{ env.IMAGE_TAG }}\` |
 
           ### Files updated
           - \`helm/gist-api/values-dev.yaml\`
           - \`helm/gist-api/values-staging.yaml\`
+
+          Merging this PR will trigger ArgoCD to sync dev and staging.
+          Production requires a separate approval in the GitHub Actions UI.
+          EOF
+          )"
+
+
+  approve-production:
+    name: Approve Production Deployment
+    runs-on: ubuntu-latest
+    needs: deploy-dev-staging
+    # Pauses here and shows an approval button in the GitHub Actions UI.
+    # Configure required reviewers under:
+    # GitHub → Settings → Environments → production → Required reviewers
+    environment: production
+
+    steps:
+      - name: Approval granted
+        run: echo "Production deployment approved — opening gitops PR."
+
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build-and-push, approve-production]
+
+    env:
+      IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
+      GITOPS_REPO: devopsinfra56/gist-api-gitops
+
+    steps:
+      - name: Checkout gist-api-gitops
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          repository: ${{ env.GITOPS_REPO }}
+          token: ${{ secrets.GITOPS_PAT }}
+
+      - name: Update image tag for production
+        run: |
+          sed -i 's|tag: ".*"|tag: "${{ env.IMAGE_TAG }}"|' \
+            helm/gist-api/values-production.yaml
+
+      - name: Commit and push branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b deploy/production-${{ env.IMAGE_TAG }}
+          git add helm/gist-api/values-production.yaml
+          git commit -m "deploy(production): update gist-api image to ${{ env.IMAGE_TAG }}"
+          git push origin deploy/production-${{ env.IMAGE_TAG }}
+
+      - name: Open pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITOPS_PAT }}
+        run: |
+          gh pr create \
+            --repo $GITOPS_REPO \
+            --base main \
+            --head deploy/production-${{ env.IMAGE_TAG }} \
+            --title "deploy(production): update gist-api image to ${{ env.IMAGE_TAG }}" \
+            --body "$(cat <<'EOF'
+          ## Image Update — Production
+
+          | Field | Value |
+          |---|---|
+          | **Environment** | \`production\` |
+          | **Image** | \`devopsinfra56/gist-api:${{ env.IMAGE_TAG }}\` |
+
+          ### Files updated
           - \`helm/gist-api/values-production.yaml\`
 
-          Merging this PR will trigger ArgoCD to sync all environments.
+          This PR was opened after manual approval in the GitHub Actions UI.
+          Merging will trigger ArgoCD to sync production.
           EOF
           )"
