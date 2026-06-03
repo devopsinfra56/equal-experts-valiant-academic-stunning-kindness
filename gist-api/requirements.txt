@@ -12,3 +12,6 @@ pytest==8.3.3
 
 # Coverage plugin for pytest — generates coverage.xml for SonarCloud
 pytest-cov==5.0.0
+
+# Prometheus metrics — exposes /metrics for Prometheus scraping
+prometheus-fastapi-instrumentator==7.1.0
