@@ -59,7 +59,7 @@ Requires Python 3.10+.
 ```bash
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip3 install -r requirements.txt
 uvicorn app.main:app --port 8080
 ```
 
@@ -68,7 +68,7 @@ uvicorn app.main:app --port 8080
 ```bash
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip3 install -r requirements.txt
 pytest test/ -v
 ```
 
