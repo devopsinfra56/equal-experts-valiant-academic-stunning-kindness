@@ -8,7 +8,7 @@ httpx==0.27.2
 uvicorn==0.30.6
 
 # Test runner — finds and runs all functions prefixed with test_
-pytest==8.3.3
+pytest==9.0.3
 
 # Coverage plugin for pytest — generates coverage.xml for SonarCloud
 pytest-cov==5.0.0
