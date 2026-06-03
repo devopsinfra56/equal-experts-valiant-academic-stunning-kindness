@@ -45,18 +45,25 @@ jobs:
           cd gist-api
           pip install -r requirements.txt
 
-      # tests live in gist-api/test/
-      # coverage.xml is generated here and read by SonarCloud in the next job
       - name: Run tests with coverage
         run: |
           cd gist-api
           pytest test/ -v --cov=app --cov-report=xml:coverage.xml
 
+      # Upload coverage.xml so the SonarCloud job can consume it directly.
+      # Avoids running pytest a second time — build once, reuse artifacts.
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: gist-api/coverage.xml
+          retention-days: 1
+
 
   # ---------------------------------------------------------------------------
   # JOB 2 — SonarCloud Scan
   # Analyses source code for security vulnerabilities and code quality issues.
-  # Needs test to pass first so coverage data exists.
+  # Needs test to pass first so coverage.xml artifact exists.
   # ---------------------------------------------------------------------------
   sonarcloud-scan:
     name: SonarCloud Scan
@@ -69,22 +76,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      # Download coverage.xml produced by the test job.
+      # path: gist-api places it at gist-api/coverage.xml — where SonarCloud expects it.
+      - name: Download coverage report
+        uses: actions/download-artifact@v4
         with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: |
-          cd gist-api
-          pip install -r requirements.txt
-
-      # Regenerate coverage.xml in this job's workspace.
-      # Each job runs on a fresh VM so files from the test job don't carry over.
-      - name: Run tests with coverage
-        run: |
-          cd gist-api
-          pytest test/ -v --cov=app --cov-report=xml:coverage.xml
+          name: coverage-report
+          path: gist-api
 
       # sonarcloud-github-action was deprecated Oct 2025.
       # Replacement: sonarqube-scan-action — handles both SonarQube Server and Cloud.

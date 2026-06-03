@@ -5,9 +5,9 @@ Responsible for fetching and shaping public gist data.
 Kept separate from main.py so it can be mocked independently in tests.
 """
 
-import time
-import httpx
-from typing import Optional
+import time # Used for implementing a simple in-memory TTL cache to reduce GitHub API calls.
+import httpx # Used for making asynchronous HTTP requests to the GitHub API.
+from typing import Optional # Used for type hinting the return value of get_user_gists (list of gists or None if user not found).
 
 # Constants and simple in-memory cache for GitHub API responses.
 GITHUB_API_BASE = "https://api.github.com"
@@ -16,7 +16,7 @@ GITHUB_HEADERS = {
     "X-GitHub-Api-Version": "2022-11-28",
 }
 
-# Simple in-memory TTL cache to stay within GitHub's 60 req/hour
+# Simple in-memory TTL (Time-To-Live) cache to stay within GitHub's 60 req/hour
 # unauthenticated rate limit on repeated calls for the same user.
 _cache: dict = {}
 CACHE_TTL_SECONDS = 60
