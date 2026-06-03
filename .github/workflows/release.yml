@@ -90,8 +90,6 @@ jobs:
           token: ${{ secrets.GITOPS_PAT }}
 
       # Update the tag field in all environment values files.
-      # Matches:  tag: "20260603-0930"
-      # Produces: tag: "20260604-0912"
       - name: Update image tag in all environments
         run: |
           for VALUES_FILE in \
