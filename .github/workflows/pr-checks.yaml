@@ -41,8 +41,8 @@ jobs:
       - name: Set up Docker Build image
         run: |
           docker build \
-          -t gist-api/:pr-${{ github.event.pull_request.number }} \
-          ./gist-api
+            -t gist-api:pr-${{ github.event.pull_request.number }} \
+           ./gist-api
 
       - name: Run Trivy scan (JSON)
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
