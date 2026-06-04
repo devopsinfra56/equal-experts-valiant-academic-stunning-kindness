@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd gist-api/
-          pytest test/ -v --cov=app --cov-report=xml:coverage.xml
+          pip install -r requirements.txt
       
   build-and-trivy-scan:
     name: Build and Trivy Scan
