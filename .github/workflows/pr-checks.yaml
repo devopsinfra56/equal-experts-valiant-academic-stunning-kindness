@@ -87,17 +87,15 @@ jobs:
           eval $(minikube docker-env)
           docker build -t gist-api:pr-${{ github.event.pull_request.number }} ./gist-api
 
-      - name: Deploy to test namespace
+      - name: Run and test image in Minikube
         run: |
-          kubectl apply -f k8s/gist-api.yaml
-          kubectl set image deployment/gist-api \
-            gist-api=gist-api:pr-${{ github.event.pull_request.number }} \
+          kubectl run gist-api-test \
+            --image=gist-api:pr-${{ github.event.pull_request.number }} \
+            --image-pull-policy=Never \
+            --restart=Never \
             -n test
-          kubectl rollout status deployment/gist-api -n test
-
-      - name: Verify deployment
-        run: |
-          kubectl get pods -n test
-          kubectl port-forward -n test deployment/gist-api 8083:8080 &
+          kubectl wait --for=condition=Ready pod/gist-api-test -n test --timeout=60s
+          kubectl port-forward -n test pod/gist-api-test 8083:8080 &
           sleep 5
           curl http://localhost:8083/health
+          kubectl delete pod/gist-api-test -n test
