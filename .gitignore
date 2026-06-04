@@ -4,4 +4,10 @@ __pycache__/
 .pytest_cache/
 venv/
 .DS_Store
-.vscode/
+
+# GitHub Actions self-hosted runner cache
+_actions/
+_PipelineMapping/
+_temp/
+_tool/
+equal-experts-valiant-academic-stunning-kindness/

@@ -1,0 +1,101 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          cd gist-api
+          pip install -r requirements.txt
+
+      - name: Run tests
+        run: |
+          cd gist-api
+          pytest test/ -v
+
+  build-and-trivy-scan:
+    name: Build and Trivy Scan
+    runs-on: ubuntu-latest
+    needs: test
+
+    permissions:
+      contents: read
+      pull-requests: write
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t gist-api:pr-${{ github.event.pull_request.number }} \
+            ./gist-api
+
+      - name: Run Trivy scan (JSON)
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
+        with:
+          scan-type: image
+          image-ref: gist-api:pr-${{ github.event.pull_request.number }}
+          format: json
+          output: trivy-results.json
+          severity: CRITICAL,HIGH
+          exit-code: 0
+
+      - name: Print Trivy results to log
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
+        with:
+          scan-type: image
+          image-ref: gist-api:pr-${{ github.event.pull_request.number }}
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: 0
+
+  deploy-to-minikube:
+    name: Deploy to Minikube
+    runs-on: self-hosted
+    needs: [test, build-and-trivy-scan]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Check Minikube status
+        run: |
+          minikube status
+          kubectl cluster-info
+
+      - name: Build image inside Minikube
+        run: |
+          eval $(minikube docker-env)
+          docker build -t gist-api:pr-${{ github.event.pull_request.number }} ./gist-api
+
+      - name: Run and test image in Minikube
+        run: |
+          kubectl run gist-api-test \
+            --image=gist-api:pr-${{ github.event.pull_request.number }} \
+            --image-pull-policy=Never \
+            --restart=Never \
+            -n test
+          kubectl wait --for=condition=Ready pod/gist-api-test -n test --timeout=60s
+          kubectl port-forward -n test pod/gist-api-test 8083:8080 &
+          sleep 5
+          curl http://localhost:8083/health
+          kubectl delete pod/gist-api-test -n test

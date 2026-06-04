@@ -1,6 +1,8 @@
-FROM python:3-alpine3.23
+# Based on the official Python image, which includes a slimmed-down version of Debian with Python installed. This provides a lightweight and secure base for our application.
+FROM python:3.12-slim
 
-# Prevent Python from generating .pyc files
+# Prevent Python from generating .pyc files, which are unnecessary in a containerized environment and can take up extra space. 
+#These files are not needed since the application will be run in a read-only filesystem and we want to minimize the number of files generated at runtime.
 ENV PYTHONDONTWRITEBYTECODE=1
 
 # Ensure logs appear immediately in Docker logs
@@ -15,6 +17,8 @@ WORKDIR /app
 # Install dependencies
 COPY requirements.txt .
 
+# --no-cache-dir ensures that pip does not store the downloaded packages in the cache, which helps to reduce the size of the final image. 
+# This is important in a containerized environment where we want to keep the image as small as possible for faster deployment and reduced attack surface.
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code

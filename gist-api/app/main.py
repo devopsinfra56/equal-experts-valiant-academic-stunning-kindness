@@ -30,7 +30,7 @@ async def list_user_gists(
     """Return the public gists for a GitHub user."""
     try:
         raw_gists = await get_user_gists(username, page=page, per_page=per_page)
-    except httpx.HTTPStatusError as exc:
+    except httpx.HTTPStatusError as exc: # Handle HTTP errors returned by the GitHub API (e.g., 403 rate limit, 500 server error).
         raise HTTPException(
             status_code=exc.response.status_code,
             detail=f"GitHub API error: {exc.response.text}",
@@ -42,7 +42,7 @@ async def list_user_gists(
         raise HTTPException(status_code=502, detail="Invalid response from GitHub API.")
 
     if raw_gists is None:
-        raise HTTPException(status_code=404, detail=f"GitHub user '{username}' not found.")
+        raise HTTPException(status_code=404, detail=f"GitHub user '{username}' not found.") # Handle the case where the specified GitHub user does not exist.
 
     return {
         "user": username,

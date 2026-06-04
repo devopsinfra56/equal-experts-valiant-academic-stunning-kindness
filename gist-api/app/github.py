@@ -34,7 +34,7 @@ def _get_cached(key: tuple) -> Optional[list]:
 
 
 def _set_cache(key: tuple, data: list) -> None:
-    _cache[key] = {"data": data, "expires": time.time() + CACHE_TTL_SECONDS}
+    _cache[key] = {"data": data, "expires": time.time() + CACHE_TTL_SECONDS} # Store the API response in the cache with an expiration time to avoid stale data and manage memory usage.
 
 
 async def get_user_gists(
@@ -49,20 +49,20 @@ async def get_user_gists(
     Raises httpx.HTTPStatusError / httpx.RequestError on unexpected failures.
     """
     key = _cache_key(username, page, per_page)
-    cached = _get_cached(key)
+    cached = _get_cached(key) # Check cache before making an API call to avoid unnecessary requests and stay within rate limits.
     if cached is not None:
         return cached
 
     url = f"{GITHUB_API_BASE}/users/{username}/gists"
     params = {"page": page, "per_page": per_page}
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient() as client: # Create an asynchronous HTTP client to make the request to the GitHub API. httpx.AsyncClient allows us to perform non-blocking I/O operations, improving the performance of our API when handling multiple requests concurrently. async with ensures that the client is properly closed after the request is made, preventing resource leaks.
         response = await client.get(url, headers=GITHUB_HEADERS, params=params)
 
-        if response.status_code == 404:
+        if response.status_code == 404: # If the GitHub API returns a 404 status code, it means the specified user does not exist. In this case, we return None to indicate that there are no gists to fetch.
             return None
 
-        response.raise_for_status()
+        response.raise_for_status() # Raise an exception for any HTTP status code that indicates an error (e.g., 403, 500). This allows us to handle these errors gracefully in the calling function and provide appropriate feedback to the client.
         data = response.json()
 
     _set_cache(key, data)
