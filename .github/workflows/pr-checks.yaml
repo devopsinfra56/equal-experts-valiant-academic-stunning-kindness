@@ -41,7 +41,7 @@ jobs:
       - name: Set up Docker Build image
         run: |
           docker build \
-          -t gist-api/:pr${{ github.event.pull_request.number }} \
+          -t gist-api/:pr-${{ github.event.pull_request.number }} \
           ./gist-api
 
       - name: Run Trivy scan (JSON)
